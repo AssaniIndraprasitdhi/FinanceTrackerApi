@@ -7,31 +7,45 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using DotNetEnv;
 
+Env.Load();
+DotNetEnv.Env.Load(); 
+
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. โหลด .env ก่อน (ถ้ายังไม่ได้โหลดในด้านบน)
-Env.Load();
-
-// 2. อ่าน Connection String จาก ENV
 var dbHost = Environment.GetEnvironmentVariable("DB_HOST");
 var dbPort = Environment.GetEnvironmentVariable("DB_PORT");
 var dbName = Environment.GetEnvironmentVariable("DB_NAME");
 var dbUser = Environment.GetEnvironmentVariable("DB_USER");
 var dbPassword = Environment.GetEnvironmentVariable("DB_PASSWORD");
+
+if (string.IsNullOrWhiteSpace(dbHost) ||
+    string.IsNullOrWhiteSpace(dbPort) ||
+    string.IsNullOrWhiteSpace(dbName) ||
+    string.IsNullOrWhiteSpace(dbUser))
+{
+    throw new InvalidOperationException("Database environment variables (DB_HOST, DB_PORT, DB_NAME, DB_USER) must be set. DB_PASSWORD อาจเว้นว่างได้หากฐานข้อมูลไม่ได้กำหนดรหัสผ่าน");
+}
+
 var connectionString = $"Server={dbHost};Port={dbPort};Database={dbName};User={dbUser};Password={dbPassword};";
 
-// 3. อ่านค่า JWT จาก ENV
 var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET");
 var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER");
 var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE");
-var jwtExpireMinutes = int.Parse(Environment.GetEnvironmentVariable("JWT_EXPIRE_MINUTES") ?? "60");
+var jwtExpireMinutesString = Environment.GetEnvironmentVariable("JWT_EXPIRE_MINUTES");
 
-// 4. ลงทะเบียน DbContext (ใช้ MySQL)
+if (string.IsNullOrWhiteSpace(jwtSecret))
+    throw new InvalidOperationException("JWT_SECRET is not configured.");
+if (string.IsNullOrWhiteSpace(jwtIssuer))
+    throw new InvalidOperationException("JWT_ISSUER is not configured.");
+if (string.IsNullOrWhiteSpace(jwtAudience))
+    throw new InvalidOperationException("JWT_AUDIENCE is not configured.");
+if (!int.TryParse(jwtExpireMinutesString, out var jwtExpireMinutes))
+    throw new InvalidOperationException("JWT_EXPIRE_MINUTES is not a valid integer.");
+
 builder.Services.AddDbContext<FinanceTrackerDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString))
 );
 
-// 5. ตั้งค่า Authentication & JWT Bearer
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -48,41 +62,35 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidAudience = jwtAudience,
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret!)),
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
 });
 
-// 6. ลงทะเบียน Service ต่างๆ (DI)
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ITransactionService, TransactionService>();
 
-// 7. ลงทะเบียน Controllers + Swagger (ถ้าต้องการ)
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// 8. กำหนด Middleware
 if (app.Environment.IsDevelopment())
 {
+    app.UseDeveloperExceptionPage();  
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();
 
-// Custom Exception Middleware (ถ้ามี)
-app.UseMiddleware<ExceptionMiddleware>();
-
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
 app.Run();

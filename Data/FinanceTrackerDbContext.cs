@@ -32,7 +32,7 @@ namespace FinanceTracker.Api.Data
                 .HasOne(ur => ur.Role)
                 .WithMany(r => r.UserRoles)
                 .HasForeignKey(ur => ur.RoleId);
-                 
+
             modelBuilder.Entity<User>()
                 .HasIndex(u => u.Username)
                 .IsUnique();
@@ -44,6 +44,26 @@ namespace FinanceTracker.Api.Data
                 .HasIndex(r => r.Name)
                 .IsUnique();
 
+            modelBuilder.Entity<Role>().HasData(
+                new Role { Id = 1, Name = "User", Description = "Default role for new users" },
+                new Role { Id = 2, Name = "Admin", Description = "Administrator with full permissions" }
+            );
+
+            modelBuilder.Entity<Transaction>()
+                .HasOne(t => t.Category)
+                .WithMany(c => c.Transactions)
+                .HasForeignKey(t => t.CategoryId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<Transaction>()
+                .HasOne(t => t.User)
+                .WithMany(u => u.Transactions)
+                .HasForeignKey(t => t.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Category>()
+                .HasIndex(c => c.Name)
+                .IsUnique();
         }
     }
 }
